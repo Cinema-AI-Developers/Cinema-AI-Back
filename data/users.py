@@ -5,7 +5,7 @@ from flask_login import UserMixin
 from sqlalchemy_serializer import SerializerMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from db_session import SqlAlchemyBase
+from .db_session import SqlAlchemyBase
 
 
 class User(SqlAlchemyBase, UserMixin, SerializerMixin):
@@ -17,7 +17,7 @@ class User(SqlAlchemyBase, UserMixin, SerializerMixin):
     phone = Column(VARCHAR, unique=True)
     avatar = Column(String)
     gender = Column(String)
-    nickname = Column(String, nullable=False)
+    name = Column(String, nullable=False)
     films_ID = Column(String, nullable=True)
     friends_ID = Column(String, nullable=True)
     description = Column(Text)
@@ -36,7 +36,7 @@ class User(SqlAlchemyBase, UserMixin, SerializerMixin):
         return type if str()
         :return: string with description
         """
-        return f"<User> {self.id} {self.nickname} {self.email}"
+        return f"<User> {self.id} {self.n1ame} {self.email}"
 
     def set_password(self, password):
         self.hashed_password = generate_password_hash(password)

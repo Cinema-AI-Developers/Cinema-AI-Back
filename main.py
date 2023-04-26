@@ -1,41 +1,24 @@
-from flask import Flask, render_template, request
-from flask_login import LoginManager, login_user, login_required, \
-    logout_user, current_user
-from flask_restful import Api
-from flask_wtf import FlaskForm
-from werkzeug.utils import redirect
-from wtforms import PasswordField, BooleanField, SubmitField, StringField, \
-    TextAreaField, SelectField
-from wtforms.fields.html5 import EmailField
-from wtforms.validators import DataRequired, Email
+import datetime
 
-from data.__all_models import *
+from flask import Flask, request, jsonify
+from flask import make_response
+from flask_login import LoginManager, login_required, \
+    current_user, logout_user, login_user
+from flask_restful import Api
+from werkzeug.utils import redirect
+
 from data import db_session
+from data.comments import Comment
+from data.users import User
 
 app = Flask(__name__)
 api = Api(app)
+app.config['SECRET_KEY'] = 'yandexlyceum_secret_key'
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=365)
 login_manager = LoginManager()
 login_manager.init_app(app)
 db_session.global_init("db/CinemaAI.sqlite")
 session = db_session.create_session()
-
-
-class RegisterForm(FlaskForm):
-    email = EmailField('Почта', validators=[Email(), DataRequired()])
-    password = PasswordField('Пароль', validators=[DataRequired()])
-    password_again = PasswordField('Повторите пароль',
-                                   validators=[DataRequired()])
-    name = StringField('Имя пользователя', validators=[DataRequired()])
-    gender = SelectField('gender', validators=[DataRequired()])
-    description = StringField("Немного о себе")
-    submit = SubmitField('Войти')
-
-
-class LoginForm(FlaskForm):
-    email = EmailField('Почта', validators=[DataRequired()])
-    password = PasswordField('Пароль', validators=[DataRequired()])
-    remember_me = BooleanField('Запомнить меня')
-    submit = SubmitField('Войти')
 
 
 @login_manager.user_loader
@@ -43,41 +26,91 @@ def load_user(user_id):
     return session.query(User).get(user_id)
 
 
-@app.route("/")
-def index():
-    return render_template("index.html", title='Лента')
-
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    form = LoginForm()
-    if form.validate_on_submit():
-        user = session.query(User).filter(
-            User.email == form.email.data).first()
-        print(user)
-        if user and user.check_password(form.password.data):
-            login_user(user, remember=form.remember_me.data)
-            return redirect("/")
-        return render_template('login.html',
-                               message="Неправильный логин или пароль",
-                               form=form)
-    print(datetime.datetime.now(), current_user.name, "id: ", current_user.id,
-          "вошел")
-    return render_template('login.html', title='Авторизация', form=form)
+    rqst = request.json
+    user = session.query(User).filter(User.email == rqst["email"]).first()
+    if user and user.check_password(rqst["password"]):
+        login_user(user, remember=rqst["remember_me"])
+        print(datetime.datetime.now(), current_user.name, "id: ",
+              current_user.id, "вошел")
+        return jsonify({'status': 'OK'})
+    return jsonify(
+        {'status': 'error', 'error_txt': 'Неправильный логин или пароль'})
 
 
-@app.route('/api/add_comm/<film_id>', methods=['POST'])
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    rqst = request.json
+    if not request.json:
+        return jsonify({'error': 'Empty request'})
+    elif not all(key in request.json for key in
+                 ['email', 'phone', 'name', 'password']):
+        return jsonify({'status': 'error', 'error_text': 'Bad request'})
+    user = User()
+    user.email = rqst["email"]
+    user.phone = rqst["phone"]
+    user.name = rqst["name"]
+    user.friends_ID = ""
+    user.type = "user"
+    user.set_password(rqst["password"])
+    print(datetime.datetime.now(), rqst["name"], "зарегистрировался")
+    session.add(user)
+    session.commit()
+    return jsonify({'status': 'OK'})
+
+
+@app.route('/logout')
 @login_required
-def leave_comment(film_id):
-    text = request.form.get("text")
+def logout():
+    print(datetime.datetime.now(), current_user.name, "id: ", current_user.id,
+          "вышел")
+    logout_user()
+    return redirect("/")
+
+
+@app.route("/api/add_comm", methods=['POST'])
+@login_required
+def add_comm():
+    if not request.json:
+        return jsonify({'error': 'Empty request'})
+    elif not all(key in request.json for key in
+                 ['user_id', 'film_id', 'value', 'text']):
+        return jsonify({'error': 'Bad request'})
     comm = Comment()
     comm.user_ID = current_user.id
-    comm.film_ID = film_id
-    comm.text = text
+    comm.film_ID = request.json["film_id"]
+    comm.text = request.json["text"]
+
+@app.route("/api/edit_comm", methods=['POST'])
+@login_required
+def edit_comm():
+    if not request.json:
+        return jsonify({'error': 'Empty request'})
+    elif not all(key in request.json for key in
+                 ['id', 'text']):
+        return jsonify({'error': 'Bad request'})
+    comm = session.query(Comment).filter(Comment.id == request.json['id'])
+    comm.text = request.json['text']
+
+@app.route("/api/edit_comm", methods=['POST'])
+@login_required
+def delete_comm():
+    if not request.json:
+        return jsonify({'error': 'Empty request'})
+    elif not 'id' in request.json:
+        return jsonify({'error': 'Bad request'})
+    comm = session.query(Comment).filter(Comment.id == request.json['id'])
+    print(datetime.datetime.now(), current_user.name, "id: ", current_user.id,
+          f"удалил коммент {comm.text} к фильму {comm.film_id}")
+    session.delete(comm)
+    session.commit()
 
 
-@app.route('/api/edit_comm/<comm_id>', methods=['POST'])
-def edit_comment(comm_id):
-    text = request.form.get("text")
-    comm = session.query(Comment).filter(Comment.id == comm_id)
-    comm.text = text
+@app.errorhandler(404)
+def not_found(error):
+    return make_response(jsonify({'error': 'Not found'}), 404)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

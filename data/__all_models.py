@@ -1,3 +1,2 @@
-from users import *
-from comments import *
-from rates import *
+from . import comments
+from . import users
