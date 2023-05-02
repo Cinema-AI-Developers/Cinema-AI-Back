@@ -13,7 +13,7 @@ from data.users import User
 
 app = Flask(__name__)
 api = Api(app)
-app.config['SECRET_KEY'] = 'yandexlyceum_secret_key'
+app.config['SECRET_KEY'] = 'pixelpopcorn_secret_key'
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=365)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -29,9 +29,16 @@ def load_user(user_id):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     rqst = request.json
-    user = session.query(User).filter(User.email == rqst["email"]).first()
+    if rqst["email"]:
+        user = session.query(User).filter(User.email == rqst["email"]).first()
+    elif rqst["phone"]:
+        user = session.query(User).filter(User.email == rqst["phone"]).first()
+    else:
+        return jsonify(
+            {'status': 'error',
+             'error_txt': 'Отсутствие телефона или почты в базе'})
     if user and user.check_password(rqst["password"]):
-        login_user(user, remember=rqst["remember_me"])
+        login_user(user, remember=True)
         print(datetime.datetime.now(), current_user.name, "id: ",
               current_user.id, "вошел")
         return jsonify({'status': 'OK'})
@@ -42,21 +49,30 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     rqst = request.json
+    print(request)
     if not request.json:
         return jsonify({'error': 'Empty request'})
     elif not all(key in request.json for key in
                  ['email', 'phone', 'name', 'password']):
         return jsonify({'status': 'error', 'error_text': 'Bad request'})
     user = User()
-    user.email = rqst["email"]
-    user.phone = rqst["phone"]
+    if not session.query(User).filter(
+            User.phone != rqst["phone"]).first() and not session.query(
+        User).filter(User.phone != rqst["phone"]).first():
+        user.email = rqst["email"]
+        user.phone = rqst["phone"]
+    else:
+        return jsonify({'error': 'Not unique user'})
     user.name = rqst["name"]
     user.friends_ID = ""
     user.type = "user"
     user.set_password(rqst["password"])
     print(datetime.datetime.now(), rqst["name"], "зарегистрировался")
-    session.add(user)
-    session.commit()
+    try:
+        session.add(user)
+        session.commit()
+    except Exception:
+        return jsonify({'error': 'Bad parameter'})
     return jsonify({'status': 'OK'})
 
 
@@ -81,6 +97,9 @@ def add_comm():
     comm.user_ID = current_user.id
     comm.film_ID = request.json["film_id"]
     comm.text = request.json["text"]
+    session.add(comm)
+    session.commit()
+
 
 @app.route("/api/edit_comm", methods=['POST'])
 @login_required
@@ -92,6 +111,20 @@ def edit_comm():
         return jsonify({'error': 'Bad request'})
     comm = session.query(Comment).filter(Comment.id == request.json['id'])
     comm.text = request.json['text']
+    session.commit()
+
+
+@app.route("/api/viewed", method=["POST"])
+@login_required
+def viewed_films():
+    if not request.json:
+        return jsonify({'error': 'Empty request'})
+    elif not 'film_id' in request.json:
+        return jsonify({'error': 'Bad request'})
+    user = session.query(User).filter(User.id == current_user.id)
+    user.films_id += f" {request.json['film_id']}"
+    session.commit()
+
 
 @app.route("/api/edit_comm", methods=['POST'])
 @login_required
