@@ -17,7 +17,7 @@ app.config['SECRET_KEY'] = 'pixelpopcorn_secret_key'
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=365)
 login_manager = LoginManager()
 login_manager.init_app(app)
-db_session.global_init("db/CinemaAI.sqlite")
+db_session.global_init("db/CinemaAI.db")
 session = db_session.create_session()
 
 
@@ -114,7 +114,7 @@ def edit_comm():
     session.commit()
 
 
-@app.route("/api/viewed", method=["POST"])
+@app.route("/api/viewed", methods=["POST"])
 @login_required
 def viewed_films():
     if not request.json:
